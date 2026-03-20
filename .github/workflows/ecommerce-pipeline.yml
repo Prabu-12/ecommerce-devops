@@ -1,0 +1,125 @@
+name: E-Commerce DevOps Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_NAME: awsjarvis/ecommerce-devops
+  K8S_DEPLOYMENT: k8s/deployment.yaml
+
+jobs:
+
+  # ══════════════════════════════════════
+  # JOB 1 — Test & SonarCloud Scan
+  # ══════════════════════════════════════
+  test-and-scan:
+    name: "🧪 Test & Quality Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          echo "✅ Dependencies installed!"
+
+      - name: Run Tests with Coverage
+        run: |
+          pytest test_app.py \
+            --cov=app \
+            --cov-report=xml \
+            --cov-report=term \
+            -v
+          echo "✅ All tests passed!"
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
+        with:
+          args: >
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
+  # ══════════════════════════════════════
+  # JOB 2 — Docker Build & Push
+  # ══════════════════════════════════════
+  docker-build-push:
+    name: "🐳 Docker Build & Push"
+    runs-on: ubuntu-latest
+    needs: test-and-scan
+    outputs:
+      image-tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set Image Tag
+        id: tag
+        run: |
+          TAG=${{ github.sha }}
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "🏷️ Tag: ${TAG}"
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker Image
+        run: |
+          docker build -t $IMAGE_NAME:${{ steps.tag.outputs.tag }} .
+          docker tag $IMAGE_NAME:${{ steps.tag.outputs.tag }} $IMAGE_NAME:latest
+          echo "✅ Image built!"
+
+      - name: Push to DockerHub
+        run: |
+          docker push $IMAGE_NAME:${{ steps.tag.outputs.tag }}
+          docker push $IMAGE_NAME:latest
+          echo "✅ Pushed: $IMAGE_NAME:${{ steps.tag.outputs.tag }}"
+
+  # ══════════════════════════════════════
+  # JOB 3 — Update K8s Manifest for ArgoCD
+  # ══════════════════════════════════════
+  update-manifest:
+    name: "📝 Update K8s Manifest"
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Image Tag
+        run: |
+          NEW_TAG=${{ needs.docker-build-push.outputs.image-tag }}
+          echo "🔄 Updating to: ${NEW_TAG}"
+          sed -i "s|$IMAGE_NAME:.*|$IMAGE_NAME:${NEW_TAG}|g" \
+            $K8S_DEPLOYMENT
+          grep "image:" $K8S_DEPLOYMENT
+          echo "✅ Manifest updated!"
+
+      - name: Commit & Push
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add $K8S_DEPLOYMENT
+          git diff --staged --quiet || \
+            git commit -m "🚀 Deploy: ${{ needs.docker-build-push.outputs.image-tag }}"
+          git push origin main
+          echo "✅ ArgoCD will auto-deploy!"
