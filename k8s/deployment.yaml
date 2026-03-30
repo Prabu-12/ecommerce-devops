@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: ecommerce-api
-        image: awsjarvis/ecommerce-devops:latest
+        image: awsjarvis/ecommerce-devops:5abe5bef82fb205d67207cc095a1fccb589762e2
         ports:
         - containerPort: 8080
         livenessProbe:
