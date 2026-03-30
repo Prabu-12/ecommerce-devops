@@ -1,0 +1,12 @@
+E-Commerce API deployed successfully!
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Values.namespace }}
+Replicas: {{ .Values.replicaCount }}
+Image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+
+Get API URL:
+  kubectl get svc {{ .Release.Name }}-svc -n {{ .Values.namespace }}
+
+Test health:
+  curl http://NODE_IP:NODE_PORT/health

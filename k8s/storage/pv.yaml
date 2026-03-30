@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ecommerce-pv
+spec:
+  capacity:
+    storage: 1Gi              # 1GB storage
+  accessModes:
+    - ReadWriteOnce           # one pod reads/writes at a time
+  persistentVolumeReclaimPolicy: Retain   # keep data after PVC deleted
+  storageClassName: standard
+  hostPath:
+    path: /data/ecommerce     # stored on Minikube node

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: storage-test
+  namespace: ecommerce
+spec:
+  containers:
+  - name: storage-test
+    image: busybox
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: ecommerce-storage
+      mountPath: /app/data
+  volumes:
+  - name: ecommerce-storage
+    persistentVolumeClaim:
+      claimName: ecommerce-pvc

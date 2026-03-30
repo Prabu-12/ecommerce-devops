@@ -1,4 +1,4 @@
-name: E-Commerce DevOps Pipeline
+name: E-Commerce Complete Pipeline
 
 on:
   push:
@@ -6,16 +6,18 @@ on:
   pull_request:
     branches: [ main ]
 
-# ADD THIS — gives workflow write permission!
 permissions:
   contents: write
 
 env:
   IMAGE_NAME: awsjarvis/ecommerce-devops
-  K8S_DEPLOYMENT: k8s/deployment.yaml
+  HELM_VALUES: ecommerce-chart/values.yaml
 
 jobs:
 
+  # ══════════════════════════════════════
+  # JOB 1 — Test & SonarCloud Scan
+  # ══════════════════════════════════════
   test-and-scan:
     name: "🧪 Test & Quality Scan"
     runs-on: ubuntu-latest
@@ -31,9 +33,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
-          echo "✅ Dependencies installed!"
+        run: pip install -r requirements.txt
 
       - name: Run Tests with Coverage
         run: |
@@ -53,11 +53,14 @@ jobs:
           args: >
             -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=app.py
             -Dsonar.tests=test_app.py
             -Dsonar.language=py
-            -Dsonar.python.coverage.reportPaths=coverage.xml
 
+  # ══════════════════════════════════════
+  # JOB 2 — Docker Build & Push
+  # ══════════════════════════════════════
   docker-build-push:
     name: "🐳 Docker Build & Push"
     runs-on: ubuntu-latest
@@ -73,7 +76,7 @@ jobs:
         run: |
           TAG=${{ github.sha }}
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "🏷️ Tag: ${TAG}"
+          echo "🏷️ Image tag: ${TAG}"
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -81,20 +84,19 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build Docker Image
+      - name: Build & Push Docker Image
         run: |
           docker build -t $IMAGE_NAME:${{ steps.tag.outputs.tag }} .
           docker tag $IMAGE_NAME:${{ steps.tag.outputs.tag }} $IMAGE_NAME:latest
-          echo "✅ Image built!"
-
-      - name: Push to DockerHub
-        run: |
           docker push $IMAGE_NAME:${{ steps.tag.outputs.tag }}
           docker push $IMAGE_NAME:latest
           echo "✅ Pushed: $IMAGE_NAME:${{ steps.tag.outputs.tag }}"
 
-  update-manifest:
-    name: "📝 Update K8s Manifest"
+  # ══════════════════════════════════════
+  # JOB 3 — Update Helm Values for ArgoCD
+  # ══════════════════════════════════════
+  update-helm-values:
+    name: "⛵ Update Helm Values"
     runs-on: ubuntu-latest
     needs: docker-build-push
     steps:
@@ -103,21 +105,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update Image Tag
+      - name: Update Image Tag in Helm Values
         run: |
           NEW_TAG=${{ needs.docker-build-push.outputs.image-tag }}
-          echo "🔄 Updating to: ${NEW_TAG}"
-          sed -i "s|$IMAGE_NAME:.*|$IMAGE_NAME:${NEW_TAG}|g" \
-            $K8S_DEPLOYMENT
-          grep "image:" $K8S_DEPLOYMENT
-          echo "✅ Manifest updated!"
+          echo "🔄 Updating Helm values with tag: ${NEW_TAG}"
+
+          # Update image tag in values.yaml
+          sed -i "s|tag: .*|tag: \"${NEW_TAG}\"|g" $HELM_VALUES
+
+          # Verify change
+          grep "tag:" $HELM_VALUES
+          echo "✅ Helm values updated!"
 
       - name: Commit & Push
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
-          git add $K8S_DEPLOYMENT
+          git add $HELM_VALUES
           git diff --staged --quiet || \
-            git commit -m "🚀 Deploy: ${{ needs.docker-build-push.outputs.image-tag }}"
+            git commit -m "⛵ Helm: update image tag to ${{ needs.docker-build-push.outputs.image-tag }}"
           git push origin main
-          echo "✅ ArgoCD will auto-deploy!"
+          echo "✅ ArgoCD will now detect and deploy via Helm!"

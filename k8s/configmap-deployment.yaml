@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-demo
+  namespace: ecommerce
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-demo
+  template:
+    metadata:
+      labels:
+        app: config-demo
+    spec:
+      containers:
+      - name: demo
+        image: nginx:latest
+        envFrom:
+        - configMapRef:
+            name: ecommerce-config  # load ALL keys as env vars

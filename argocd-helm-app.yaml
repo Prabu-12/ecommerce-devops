@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-helm
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Prabu-12/ecommerce-devops
+    targetRevision: HEAD
+    path: ecommerce-chart
+    helm:
+      releaseName: ecommerce
+      valueFiles:
+      - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+    - CreateNamespace=true
