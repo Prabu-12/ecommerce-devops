@@ -3,7 +3,7 @@ replicaCount: 2
 image:
   repository: awsjarvis/ecommerce-devops
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: "fc193ca75570303ff6ad24e72c82d8ae4a17d225"
 
 namespace: ecommerce
 
